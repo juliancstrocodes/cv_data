@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import re
 import os
 from cellpose import io, dynamics
+from PIL import Image
 
 def process_single_mask(input_path, output_path, min_size=100):
     mask = imageio.imread(input_path)
@@ -71,6 +72,51 @@ def process_all_masks(input_folder, output_folder, min_size=100, file_pattern=r'
         imageio.imwrite(output_path, labeled_mask)
         print(f"Processed and saved: {output_path}")
 
+
+def process_images_and_masks(folder):
+    # Process each file in the folder
+    for filename in os.listdir(folder):
+        file_path = os.path.join(folder, filename)
+        with Image.open(file_path) as img:
+            if 'mask' in filename:
+                # Assuming that filenames containing 'mask' are mask files
+                if img.mode == 'I':  # Check if mask is in 'I' 32-bit integer mode
+                    # Convert 'I' mode to 'L' mode, scaling down values if necessary
+                    img_array = np.array(img, dtype=np.uint32)
+                    max_val = np.max(img_array)
+                    if max_val > 0:  # Avoid division by zero
+                        img_array = (img_array / max_val) * 255
+                    img_8bit = Image.fromarray(img_array.astype(np.uint8), 'L')
+                    img_8bit.save(file_path)  # Overwrite the original file
+                    print(f"Converted and overwritten mask: {file_path}")
+            else:
+                # Convert RGBA images to grayscale
+                if img.mode == 'RGBA':
+                    gray_img = img.convert('L')  # Convert to 8-bit grayscale
+                    gray_img.save(file_path)  # Overwrite the original file
+                    print(f"Converted and overwritten image: {file_path}")
+
+
+def convert_masks_to_tiff(input_folder, mask_identifier='mask'):
+    # Get all PNG files in the input directory
+    files = [f for f in os.listdir(input_folder) if f.endswith('.png')]
+    
+    for file in files:
+        if mask_identifier in file:
+            input_path = os.path.join(input_folder, file)
+            output_path = os.path.join(input_folder, file.replace('.png', '.tif'))
+
+            # Read the PNG mask
+            mask = imageio.imread(input_path)
+
+            # Convert to TIFF and save
+            imageio.imwrite(output_path, mask, format='TIFF')
+            
+            # Remove the original PNG file
+            os.remove(input_path)
+            print(f"Converted and replaced {input_path} with {output_path}")
+
+# does not create a cellpose compatible npy file
 def convert_single_mask_to_npy(png_path, output_folder):
     # Extract the base file name without extension
     base_file_name = re.sub(r'_mask\.png$', '', os.path.basename(png_path))
@@ -119,16 +165,44 @@ def check_npy_file(npy_path):
     except Exception as e:
         print(f" - ERROR loading {npy_path}: {e}")
 
+def check_bit_depth(input_folder):
+    # Get all image files in the input directory
+    files = [f for f in os.listdir(input_folder) if f.endswith('.png') or f.endswith('.tif')]
+    
+    for file in files:
+        path = os.path.join(input_folder, file)
+        with Image.open(path) as img:
+            print(f"{file}: {img.mode}, {img.getbands()}")
 
-dir_path = './test'
+
+
+dir_path = './cv_data/cleaned_augmented_data'
 mask_filter = '_mask'
+
+# Collect all images and masks
 images = [f for f in os.listdir(dir_path) if not f.endswith(mask_filter + '.png')]
 masks = [f for f in os.listdir(dir_path) if f.endswith(mask_filter + '.png')]
 
+# Check for images without a corresponding mask
 for img in images:
     expected_mask = img.replace('.png', mask_filter + '.png')
     if expected_mask not in masks:
         print(f"Missing mask for image: {img}")
+
+# Check for masks without a corresponding image
+for mask in masks:
+    expected_image = mask.replace(mask_filter + '.png', '.png')
+    if expected_image not in images:
+        print(f"Missing image for mask: {mask}")
+
+# input_folder = './cv_data/cleaned_augmented_data'
+# process_images_and_masks(input_folder)
+
+
+# process_all_masks(input_folder, input_folder, min_size=100)
+
+# convert_masks_to_tiff(input_folder)
+
 # input_folder = 'C:\\Users\\Gamer\\Desktop\\local_augmented_data'
 # process_all_masks(input_folder, input_folder, min_size=100)
 
